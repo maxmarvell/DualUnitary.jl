@@ -1,3 +1,4 @@
+abstract type AbstractGate{S<:ElementarySpace} end
 
 struct Gate{S<:ElementarySpace}
     U::TensorMap
@@ -49,9 +50,8 @@ struct FoldedGate{S<:ElementarySpace}
 end
 
 function fold(gate::Gate)::FoldedGate
-    d = dim(gate.V)
     @tensor W[i, i', j, j'; k, k', l, l'] := gate.U[i, j; k, l] * conj(gate.U[i', j'; k', l'])
-    FoldedGate(W / d, gate.V)
+    FoldedGate(W, gate.V)
 end
 
 function dual_fold(W::TensorMap)::TensorMap

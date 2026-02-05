@@ -3,6 +3,7 @@ module DualUnitary
 using LinearAlgebra
 using TensorKit
 using Serialization
+using Dates
 
 include("gates.jl")
 

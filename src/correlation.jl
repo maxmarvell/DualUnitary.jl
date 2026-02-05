@@ -1,12 +1,16 @@
 
-function operator_string(V::ElementarySpace, n::Int; op::Union{TensorMap, Nothing}=nothing)::TensorMap
+function operator_string(V::ElementarySpace, n::Int; op::Union{TensorMap, Nothing}=nothing, op_first::Bool=true)::TensorMap
     d = dim(V)
     I_vec = permute(id(V)/sqrt(d), ((1, 2), ()))
     if op === nothing
         return reduce(⊗, fill(I_vec, n))
     end
     op_vec = permute(op, ((1, 2), ()))
-    return reduce(⊗, vcat(fill(I_vec, n-1), [op_vec]))
+    if op_first
+        return reduce(⊗, vcat([op_vec], fill(I_vec, n-1)))  # O ⊗ I ⊗ I ⊗ ...
+    else
+        return reduce(⊗, vcat(fill(I_vec, n-1), [op_vec]))  # I ⊗ I ⊗ ... ⊗ O
+    end
 end
 
 struct TileConfig
@@ -139,7 +143,7 @@ function skeleton(h::Vector{Int}, v::Vector{Int}, a::TensorMap,
     end
 
     n_legs = div(numout(a), 2)
-    b = operator_string(config.V, n_legs, op=O)
+    b = operator_string(config.V, n_legs; op=O, op_first=false)
     return dot(b, a)
 end
 
@@ -154,9 +158,9 @@ function two_point_correlation(config::TileConfig, x::Int, t::Int,
 
     d = div(numout(config.main.hd), 2)
 
-    yₕ = div(t + x, 2)
-    yᵥ = div(t + 2 - x, 2)
-    k = min(yₕ, yᵥ, k)
+    yₕ = cld(t + x, 2)  # ceiling division
+    yᵥ = fld(t + 2 - x, 2)  # floor division
+    # k = min(yₕ, yᵥ, k)
     parity = isodd(t + x) 
 
     if yᵥ % d != 0
@@ -171,8 +175,8 @@ function two_point_correlation(config::TileConfig, x::Int, t::Int,
     end
 
     paths = generate_paths(
-        yₕ % d != 0 ? div(yₕ, d) + 1 : div(yₕ, d),
-        yᵥ % d != 0 ? div(yᵥ, d) : div(yᵥ, d) - 1,
+        yₕ % d != 0 ? fld(yₕ, d) + 1 : fld(yₕ, d),
+        yᵥ % d != 0 ? fld(yᵥ, d) : fld(yᵥ, d) - 1,
         k
     )
 
@@ -187,10 +191,19 @@ end
 function two_point_correlation(tile_dir::String, x::Int, t::Int,
                                O₁::TensorMap, O₂::TensorMap,
                                d::Int, k::Int=typemax(Int))::ComplexF64
-    yₕ = div(t + x, 2)
-    yᵥ = div(t + 2 - x, 2)
+    yₕ = cld(t + x, 2)  # ceiling division
+    yᵥ = fld(t + 2 - x, 2)  # floor division
     config = build_tile_config(tile_dir, d, yₕ, yᵥ)
     return two_point_correlation(config, x, t, O₁, O₂, k)
+end
+
+function two_point_correlation(gate::FoldedGate, x::Int, t::Int,
+                               O₁::TensorMap, O₂::TensorMap;
+                               d::Int, k::Int=typemax(Int))::ComplexF64
+    timestamp = Dates.format(now(), "yyyymmdd_HHMMSS")
+    dir = "tmp/run_$timestamp/"
+    get_tiles(gate, d, dir)
+    return two_point_correlation(dir, x, t, O₁, O₂, d, k)
 end
 
 function apply_transfer_matrix(gate::FoldedGate, a::TensorMap, l::Int, dir::Symbol; pivot::Bool=true)::TensorMap
@@ -198,7 +211,7 @@ function apply_transfer_matrix(gate::FoldedGate, a::TensorMap, l::Int, dir::Symb
     if dir == :h
         @tensor W[i, i'; k, k'] := gate.W[a, a, i, i'; k, k', b, b]
     elseif dir == :v
-        @tensor W[i, i'; k, k'] := gate.W[i, i', a, a'; b, b, k, k']
+        @tensor W[i, i'; k, k'] := gate.W[i, i', a, a; b, b, k, k']
     end
 
     for _ in 1:l-1
@@ -223,7 +236,7 @@ function skeleton(gate::FoldedGate, h::Vector{Int}, v::Vector{Int}, a::TensorMap
         return dot(b, a) 
     end
 
-    for _ in 1:length(v)-1
+    for i in 1:length(v)-1
         a = apply_transfer_matrix(gate, a, h[i], :h)
         a = apply_transfer_matrix(gate, a, v[i], :v)
     end
@@ -244,7 +257,7 @@ function skeleton(gate::FoldedGate, h::Vector{Int}, v::Vector{Int}, a::TensorMap
     return dot(b, a)
 end
 
-function two_point_correlation(gate::FoldedGate, x::Integer, t::Integer, O₁::TensorMap, O₂::TensorMap, k::Int=typemax(Int))::Complex
+function two_point_correlation(gate::FoldedGate, x::Int, t::Int, O₁::TensorMap, O₂::TensorMap, k::Int=typemax(Int))::Complex
 
     # check domain and codomain of O
     V = gate.V
@@ -257,11 +270,11 @@ function two_point_correlation(gate::FoldedGate, x::Integer, t::Integer, O₁::T
     b = permute(O₂, ((1, 2), ()))
 
     # get circuit block dimensions and parity
-    yₕ = div(t + x, 2)
-    yᵥ = div(t + 2 - x, 2)
+    yₕ = cld(t + x, 2)  # ceiling division
+    yᵥ = fld(t + 2 - x, 2)  # floor division
     parity = isodd(t + x) 
 
-    k = min(yₕ, yᵥ, k)
+    # k = min(yₕ, yᵥ, k)
 
     result = zero(ComplexF64)
     paths = generate_paths(yₕ, yᵥ - 1, k) # truncate vertical height by convention

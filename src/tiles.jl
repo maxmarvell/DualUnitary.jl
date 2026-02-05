@@ -77,7 +77,7 @@ function _hx_column_defect(W::TensorMap, dᵥ::Int)
         [-1, -2, dᵥ+1, dᵥ+1, -(2*dᵥ+1), -(2*dᵥ+2), 3*dᵥ-2, 3*dᵥ-1]
     )
     col = ncon(tensors, indices)
-    return permute(col, ((1, 2), tuple(3:2*dᵥ...)))
+    return permute(col, ((1, 2), tuple(3:2*dᵥ+2...)))
 end
 
 # yields row like (tops) ← (left) ordered left to right — traces bottom+right
@@ -138,13 +138,10 @@ function _vx_column_defect(W::TensorMap, dᵥ::Int)
     end
 
     tensors = ntuple(_ -> W, dᵥ)
-    # Gate 1 (bottom): top→connect, right→external, left→trace, bottom→external (input)
-    # Middle gates: top→connect, right→external, left→trace, bottom→connect
-    # Gate dᵥ (top): top→trace, right→external, left→trace, bottom→connect
     indices = (
         [dᵥ+2, dᵥ+3, -1, -2, 1, 1, -(2*dᵥ+1), -(2*dᵥ+2)],
         ntuple(i -> [dᵥ+2*i+2, dᵥ+2*i+3, -(2*i+1), -(2*i+2), i+1, i+1, dᵥ+2*i, dᵥ+2*i+1], dᵥ - 2)...,
-        [dᵥ, dᵥ, -(2*dᵥ-1), -(2*dᵥ), dᵥ+1, dᵥ+1, 2*dᵥ-2, 2*dᵥ-1]
+        [dᵥ, dᵥ, -(2*dᵥ-1), -(2*dᵥ), dᵥ+1, dᵥ+1, 3*dᵥ-2, 3*dᵥ-1]
     )
     col = ncon(tensors, indices)
     return permute(col, (ntuple(identity, 2*dᵥ), (2*dᵥ+1, 2*dᵥ+2)))
@@ -152,6 +149,10 @@ end
 
 # yields row like (right) ← (bottoms) ordered left to right
 function _vx_row_defect(W::TensorMap, dₕ::Int)
+    if dₕ == 1
+        return _perm(_trace_top_left(W), (1, 2), (3, 4))  # (right) ← (bottom)
+    end
+
     tensors = ntuple(_ -> W, dₕ)
     indices = (
         [2, 2, dₕ+2, dₕ+3, 1, 1, -3, -4],
@@ -159,21 +160,21 @@ function _vx_row_defect(W::TensorMap, dₕ::Int)
         [dₕ+1, dₕ+1, -1, -2, 3*dₕ-2, 3*dₕ-1, -(2*dₕ+1), -(2*dₕ+2)]
     )
     row = ncon(tensors, indices)
-    return permute(row, ((1, 2), tuple(3:2*dₕ...)))
+    return permute(row, ((1, 2), tuple(3:2*dₕ+2...)))
 end
 
-function hd_tile(W::TensorMap, d_h::Int, d_v::Int)::TensorMap
-    if d_v == 1
+function hd_tile(W::TensorMap, dₕ::Int, dᵥ::Int)::TensorMap
+    if dᵥ == 1
         T = _trace_top_bottom(W)  # traces top+bottom, keeps right+left
         tile = _perm(T, (1, 2), (3, 4))  # (right) ← (left)
-        for _ in 1:(d_h - 1)
+        for _ in 1:(dₕ - 1)
             tile = tile * _perm(T, (1, 2), (3, 4))
         end
         return tile
     end
-    col = _hd_column(W, d_v)
+    col = _hd_column(W, dᵥ)
     tile = col
-    for _ in 1:(d_h - 1)
+    for _ in 1:(dₕ - 1)
         tile = tile * col
     end
     return tile
@@ -217,24 +218,24 @@ function hx_tile(W::TensorMap, dₕ::Int, dᵥ::Int)::TensorMap
     return permute(tile, (tuple(3:2*dₕ..., 1, 2), tuple(2*dₕ+1:2*dₕ+2*dᵥ...)))
 end
 
-function vd_tile(W::TensorMap, d_h::Int, d_v::Int)::TensorMap
-    if d_h == 1
+function vd_tile(W::TensorMap, dₕ::Int, dᵥ::Int)::TensorMap
+    if dₕ == 1
         T = _trace_right_left(W)  # traces right+left, keeps top+bottom
         tile = _perm(T, (1, 2), (3, 4))  # (top) ← (bottom)
-        for _ in 1:(d_v - 1)
+        for _ in 1:(dᵥ - 1)
             tile = tile * _perm(T, (1, 2), (3, 4))
         end
         return tile
     end
-    row = _vd_row(W, d_h)
+    row = _vd_row(W, dₕ)
     tile = row
-    for _ in 1:(d_v - 1)
+    for _ in 1:(dᵥ - 1)
         tile = tile * row
     end
     return tile
 end
 
-function vx_tile(W::TensorMap, dᵥ::Int, dₕ::Int)::TensorMap
+function vx_tile(W::TensorMap, dₕ::Int, dᵥ::Int)::TensorMap
 
     if dₕ == 1 && dᵥ == 1
         return _perm(_trace_top_left(W), (1, 2), (3, 4))  # (right) ← (bottom)
@@ -248,7 +249,7 @@ function vx_tile(W::TensorMap, dᵥ::Int, dₕ::Int)::TensorMap
         return _vx_column_defect(W, dᵥ)  # (rights) ← (bottom)
     end
 
-    row = _vx_row(W, dₕ)
+    row = _vx_row(W, dₕ) # (tops, right₁) ← (bottoms)
     acc = row
 
     for _ in 1:(dᵥ - 2)
@@ -256,7 +257,7 @@ function vx_tile(W::TensorMap, dᵥ::Int, dₕ::Int)::TensorMap
             numout(acc)+1:numin(acc)+numout(acc)-2*dₕ..., # right indices of accumulant
             2*dₕ+1:numout(acc)..., # new right indices
             numin(acc)+numout(acc)-2*dₕ+1:numin(acc)+numout(acc)... # bottom indices
-        ))))
+        )))) # (tops) ← (right₁,...,rightₙ,bottoms)
         acc = row * acc # (tops, rightₙ₊₁) ← (right₁,...,rightₙ,bottoms)
     end
 
@@ -265,7 +266,7 @@ function vx_tile(W::TensorMap, dᵥ::Int, dₕ::Int)::TensorMap
         numout(acc)+1:numin(acc)+numout(acc)-2*dₕ..., # right indices of accumulant
         2*dₕ+1:numout(acc)..., # new right indices
         numin(acc)+numout(acc)-2*dₕ+1:numin(acc)+numout(acc)... # bottom indices
-    ))))
+    )))) # (tops) ← (right₁,...,rightₙ,bottoms)
 
     row = _vx_row_defect(W, dₕ)
     tile = row * acc # (rightₙ₊₁) ← (right₁,...,rightₙ,bottoms)

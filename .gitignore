@@ -1,3 +1,19 @@
+# Temporary files and output
+tmp/
+*.tmp
+
+# Julia
+*.jl.*.cov
+*.jl.cov
+*.jl.mem
+deps/deps.jl
+docs/build/
+docs/site/
+
+# Serialized data
+*.jls
+
+# IDE and editor files
 *.swp
 *.swo
 *~
@@ -5,3 +21,24 @@
 .idea/
 .DS_Store
 Thumbs.db
+
+# Compiled files
+*.o
+*.so
+*.dylib
+*.dll
+
+# Logs
+*.log
+
+# Python (if using PyCall or similar)
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# Environment and local config
+.env
+.envrc
