@@ -10,6 +10,7 @@ include("gates.jl")
 export Gate,
        FoldedGate,
        soliton_dual_unitary_U1_qubit,
+       soliton_dual_unitary_complex,
        is_dual_unitary,
        fold,
        is_unital,
@@ -17,7 +18,11 @@ export Gate,
        dual_fold,
        has_soliton,
        pertubation,
-       peturb
+       peturb,
+       apply_caps,
+       to_complex_space,
+       random_perturbation,
+       peturb_folded
 
 include("tiles.jl")
 

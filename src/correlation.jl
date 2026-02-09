@@ -197,31 +197,31 @@ function two_point_correlation(tile_dir::String, x::Int, t::Int,
     return two_point_correlation(config, x, t, O₁, O₂, k)
 end
 
-function two_point_correlation(gate::FoldedGate, x::Int, t::Int,
-                               O₁::TensorMap, O₂::TensorMap;
-                               d::Int, k::Int=typemax(Int))::ComplexF64
-    timestamp = Dates.format(now(), "yyyymmdd_HHMMSS")
-    dir = "tmp/run_$timestamp/"
-    get_tiles(gate, d, dir)
-    return two_point_correlation(dir, x, t, O₁, O₂, d, k)
-end
+# function two_point_correlation(gate::FoldedGate, x::Int, t::Int,
+#                                O₁::TensorMap, O₂::TensorMap;
+#                                d::Int, k::Int=typemax(Int))::ComplexF64
+#     timestamp = Dates.format(now(), "yyyymmdd_HHMMSS")
+#     dir = "tmp/run_$timestamp/"
+#     get_tiles(gate, d, dir)
+#     return two_point_correlation(dir, x, t, O₁, O₂, d, k)
+# end
 
 function apply_transfer_matrix(gate::FoldedGate, a::TensorMap, l::Int, dir::Symbol; pivot::Bool=true)::TensorMap
 
     if dir == :h
-        @tensor W[i, i'; k, k'] := gate.W[a, a, i, i'; k, k', b, b]
+        W = apply_caps(gate, (1, 4))
     elseif dir == :v
-        @tensor W[i, i'; k, k'] := gate.W[i, i', a, a; b, b, k, k']
+        W = apply_caps(gate, (2, 3))
     end
 
     for _ in 1:l-1
         a = W * a
     end
 
-    if pivot && dir == :h 
-        @tensor W[i, i'; k, k'] = gate.W[i, i', a, a; k, k', b, b]
+    if pivot && dir == :h
+        W = apply_caps(gate, (2, 4))
     elseif pivot && dir == :v
-        @tensor W[i, i'; k, k'] = gate.W[a, a, i, i'; b, b, k, k']
+        W = apply_caps(gate, (1, 3))
     end
 
     return W * a
@@ -257,7 +257,7 @@ function skeleton(gate::FoldedGate, h::Vector{Int}, v::Vector{Int}, a::TensorMap
     return dot(b, a)
 end
 
-function two_point_correlation(gate::FoldedGate, x::Int, t::Int, O₁::TensorMap, O₂::TensorMap, k::Int=typemax(Int))::Complex
+function two_point_correlation(gate::FoldedGate, x::Int, t::Int, O₁::TensorMap, O₂::TensorMap; k::Int=typemax(Int))::Complex
 
     # check domain and codomain of O
     V = gate.V

@@ -1,35 +1,42 @@
-
 using Revise
 using DualUnitary
 using TensorKit
 using Serialization
+using LinearAlgebra
 
-dir = "tmp/peturbed"
+# --- Folded perturbation (Eq. 30-31) ---
+println("="^60)
+println("Folded perturbation test (Eq. 30 vs 31)")
+println("="^60)
 
 gate = soliton_dual_unitary_U1_qubit(0.5, 0.5)
-pgate = peturb(gate, 0.1)
-fg = fold(pgate)
+P = random_perturbation(gate)
+ϵ = 10
+D = 3
+t = 10
 
-V = U1Space(0 => 1, 1 => 1)
-d = dim(gate.V)
+# Unfolded path: U_η = U · exp(iηP), then fold
+pgate = peturb(gate, ϵ; P=P)
+fg_unfolded = fold(pgate)
+
+# Folded path: W_η = (exp(-iηP) ⊗ exp(iηP*)) · W
+fg_folded = peturb_folded(fold(gate), P, ϵ)
+
+println("\nConsistency check:")
+println("  W_unfolded ≈ W_folded: ", fg_unfolded.W ≈ fg_folded.W)
+println("  Max difference: ", maximum(abs.(convert(Array, fg_unfolded.W - fg_folded.W))))
+
+# Correlation test using folded-perturbed gate
+dir = "tmp/folded_peturbed"
+
+V = gate.V
+d = dim(V)
 Z = TensorMap(Dict(U1Irrep(0) => fill(1,1,1),
               U1Irrep(1) => fill(-1,1,1)), V ← V) / sqrt(d)
 
-D = 2
+get_tiles(fg_folded, D, dir)
 
-# Regenerate tiles to pick up any fixes
-get_tiles(fg, D, dir)
-
-# Compare tile-based vs direct methods
-t = 2
 println("\nComparing tile-based vs direct correlation for t=$t:")
-println("="^60)
-
-
-
-# Direct test: compare single tile application vs direct transfer matrices
-println("\n" * "="^60)
-println("Testing single tile vs direct transfer matrices:")
 println("="^60)
 
 let
@@ -38,7 +45,7 @@ let
 
     for x in -t+1:1:t
         tile_result = two_point_correlation(dir, x, t, Z, Z, D)
-        direct_result = two_point_correlation(fg, x, t, Z, Z)
+        direct_result = two_point_correlation(fg_folded, x, t, Z, Z)
 
         tile_sum += tile_result
         direct_sum += direct_result

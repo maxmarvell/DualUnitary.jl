@@ -49,6 +49,79 @@ struct FoldedGate{S<:ElementarySpace}
     end
 end
 
+
+"""
+    apply_caps(gate, which)
+
+Cap (trace out) one interleaved (V, V′) pair of a folded tensor `W`.
+
+# Arguments
+- `W`: A folded TensorMap with interleaved legs `(V, V′, V, V′)`
+- `which`: Int's specifying the gate pair to cap.\n
+  1 - Left output\n
+  2 - Right output\n
+  3 - Left input\n
+  4 - Right input
+
+
+# Returns
+A new TensorMap with the selected pair traced out.
+"""
+function apply_caps(gate::FoldedGate, which::Tuple{Vararg{Int}})
+    W = gate.W
+    d = dim(gate.V)
+    s = Set(which)
+
+    if s == Set([1, 2, 3, 4])
+        @tensor T[] := W[a,a,b,b; c,c,d,d]
+        return T / d^2
+    elseif s == Set([1, 2, 3])
+        @tensor T[l,l'] := W[a,a,b,b; c,c,l,l']
+        return T / sqrt(d)^3
+    elseif s == Set([1, 2, 4])
+        @tensor T[k,k'] := W[a,a,b,b; k,k',d,d]
+        return T / sqrt(d)^3
+    elseif s == Set([1, 3, 4])
+        @tensor T[j,j'] := W[a,a,j,j'; c,c,d,d]
+        return T / sqrt(d)^3
+    elseif s == Set([2, 3, 4])
+        @tensor T[i,i'] := W[i,i',b,b; c,c,d,d]
+        return T / sqrt(d)^3
+    elseif s == Set([1, 2])
+        @tensor T[k,k',l,l'] := W[a,a,b,b; k,k',l,l']
+        return T / d
+    elseif s == Set([1, 3])
+        @tensor T[j,j';l,l'] := W[a,a,j,j'; c,c,l,l']
+        return T / d
+    elseif s == Set([1, 4])
+        @tensor T[j,j';k,k'] := W[a,a,j,j'; k,k',d,d]
+        return T / d
+    elseif s == Set([2, 3])
+        @tensor T[i,i';l,l'] := W[i,i',b,b; c,c,l,l']
+        return T / d
+    elseif s == Set([2, 4])
+        @tensor T[i,i';k,k'] := W[i,i',b,b; k,k',d,d]
+        return T / d
+    elseif s == Set([3, 4])
+        @tensor T[i,i',j,j'] := W[i,i',j,j'; c,c,d,d]
+        return T / d
+    elseif s == Set([1])
+        @tensor T[j,j';k,k',l,l'] := W[a,a,j,j'; k,k',l,l']
+        return T / sqrt(d)
+    elseif s == Set([2])
+        @tensor T[i,i';k,k',l,l'] := W[i,i',b,b; k,k',l,l']
+        return T / sqrt(d)
+    elseif s == Set([3])
+        @tensor T[i,i',j,j';l,l'] := W[i,i',j,j'; c,c,l,l']
+        return T / sqrt(d)
+    elseif s == Set([4])
+        @tensor T[i,i',j,j';k,k'] := W[i,i',j,j'; k,k',d,d]
+        return T / sqrt(d)
+    else  # No traces (empty set)
+        return W
+    end
+end
+
 function fold(gate::Gate)::FoldedGate
     @tensor W[i, i', j, j'; k, k', l, l'] := gate.U[i, j; k, l] * conj(gate.U[i', j'; k', l'])
     FoldedGate(W, gate.V)
@@ -100,9 +173,58 @@ function pertubation(gate::Gate; ϵ::Float64=0.01)::Gate
     return Gate(exp(ϵ * A), gate.V)
 end
 
-function peturb(gate::Gate, ϵ::Real=0.01)::Gate
+function to_complex_space(gate::Gate)::Gate
+    d = dim(gate.V)
+    V = ℂ^d
+    M = convert(Array, gate.U)
+    return Gate(TensorMap(M, V ⊗ V ← V ⊗ V), V)
+end
+
+function soliton_dual_unitary_complex(d::Int, ϕ::Float64, J::Float64)::Gate
+    V = ℂ^d
+
+    u₊ = randisometry(V, V)
+    u₋ = randisometry(V, V)
+    v₊ = randisometry(V, V)
+    v₋ = randisometry(V, V)
+
+    W = V ⊗ V
+    M = zeros(ComplexF64, d^2, d^2)
+    for i in 1:d, j in 1:d
+        r = (i - 1) * d + j
+        if i == j
+            M[r, r] = exp(-im * J)
+        else
+            c = (j - 1) * d + i
+            M[r, c] = -im * exp(im * J)
+        end
+    end
+    U = TensorMap(M, W ← W)
+
+    return Gate(exp(im * ϕ) * (u₊ ⊗ u₋) * U * (v₋ ⊗ v₊), V)
+end
+
+function random_perturbation(gate::Gate)::TensorMap
     V = gate.V
     δ = randn(ComplexF64, V ⊗ V ← V ⊗ V)
-    A = (δ - δ') / 2
-    return Gate(exp(ϵ * A) * gate.U, V)
+    return (δ + δ') / 2
+end
+
+function peturb_folded(gate::FoldedGate, P::TensorMap, ϵ::Real=0.01)::FoldedGate
+    V = gate.V
+    G = exp(-im * ϵ * P)
+
+    @tensor W_new[i,i',j,j'; k,k',l,l'] :=
+        G[i,j; a,b] * conj(G[i',j'; a',b']) * gate.W[a,a',b,b'; k,k',l,l']
+
+    return FoldedGate(W_new, V)
+end
+
+function peturb(gate::Gate, ϵ::Real=0.01; P::Union{TensorMap, Nothing}=nothing)::Gate
+    V = gate.V
+    if P === nothing
+        δ = randn(ComplexF64, V ⊗ V ← V ⊗ V)
+        P = (δ + δ') / 2
+    end
+    return Gate(gate.U * exp(im * ϵ * P), V)
 end
